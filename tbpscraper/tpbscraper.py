@@ -21,7 +21,8 @@ def page_parse(data):
 	seeders = dl2.findAll('dd')[2].text
 	leechers = dl2.findAll('dd')[3].text
 	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href']
-	return {'title': title, 'user' : byuser, 'date' : dateup, 'seeders' : seeders, 'leechers' : leechers, 'magnet' : magnet}
+	comment = soup.findAll('div', {'class' : 'nfo'})[0].text
+	return {'title': title, 'user' : byuser, 'date' : dateup, 'seeders' : seeders, 'leechers' : leechers, 'comment' : comment, 'magnet' : magnet}
 	
 class TPBScraper:
 	def __init__(self, dbpath, startid, endid):
