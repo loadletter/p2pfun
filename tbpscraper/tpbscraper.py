@@ -6,6 +6,7 @@ from sqlitedict import SqliteDict
 
 HTTP_PROXY = ""
 TPB_URL = "http://uj3wazyk5u4hnvtk.onion"
+SKIP_EXISTING = True
 NUM_THREADS = 20
 NUM_CHUNK = 200
 
@@ -51,6 +52,8 @@ class TPBScraper:
 		self.database.close()
 			
 	def downloader(self, tid):
+		if SKIP_EXISTING and str(tid) in self.database:
+			return
 		req = self.session.get("%s/torrent/%i" % (TPB_URL, tid), timeout=120)
 		isfound = not "<title>Not Found | The Pirate Bay" in req.text
 		if req.status_code == 200 and isfound:
