@@ -15,15 +15,19 @@ def page_parse(data):
 	soup = BeautifulSoup(data)
 	dl1 = soup.findAll('dl', {'class' : 'col1'})[0]
 	size = dl1.findAll('dd')[2].text.replace('&nbsp;',' ')
+	category = dl1.findAll('a', {'title' : 'More from this category'})[0].text.replace(' &gt; ', '>')
+	tags = []
+	if len(dl1.findAll('dd')) > 3:
+		tags = map(lambda x: x.text, dl1.findAll('dd')[3].findAll('a'))
 	title = soup.find(id='title').text
 	dl2 = soup.findAll('dl', {'class' : 'col2'})[0]
 	dateup = dl2.findAll('dd')[0].text
 	byuser = dl2.findAll('dd')[1].text
 	seeders = dl2.findAll('dd')[2].text
 	leechers = dl2.findAll('dd')[3].text
-	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href']
+	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href'].split('&')[0]
 	comment = soup.findAll('div', {'class' : 'nfo'})[0].text
-	return {'title': title, 'user' : byuser, 'date' : dateup, 'seeders' : seeders, 'leechers' : leechers, 'comment' : comment, 'magnet' : magnet}
+	return {'title': title, 'user' : byuser, 'date' : dateup, 'seeders' : seeders, 'leechers' : leechers, 'comment' : comment, 'magnet' : magnet, 'category' : category, 'tags' : tags}
 	
 class TPBScraper:
 	def __init__(self, dbpath, startid, endid):
@@ -54,7 +58,7 @@ class TPBScraper:
 	def downloader(self, tid):
 		if SKIP_EXISTING and str(tid) in self.database:
 			return
-		req = self.session.get("%s/torrent/%i" % (TPB_URL, tid), timeout=120)
+		req = self.session.get("%s/torrent/%i" % (TPB_URL, tid), timeout=120, headers={"accept-language": "en"})
 		isfound = not "<title>Not Found | The Pirate Bay" in req.text
 		if req.status_code == 200 and isfound:
 			print "found:", tid
