@@ -1,4 +1,4 @@
-import sys
+import sys, json
 from multiprocessing.pool import ThreadPool
 import requests
 from BeautifulSoup import BeautifulSoup
@@ -27,11 +27,13 @@ def page_parse(data):
 	leechers = dl2.findAll('dd')[3].text
 	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href'].split('&')[0]
 	comment = soup.findAll('div', {'class' : 'nfo'})[0].text
-	return {'title': title, 'user' : byuser, 'date' : dateup, 'seeders' : seeders, 'leechers' : leechers, 'comment' : comment, 'magnet' : magnet, 'category' : category, 'tags' : tags}
+	return (title, byuser, dateup, seeders, leechers, comment, magnet, category, json.dumps(tags))
 	
 class TPBScraper:
 	def __init__(self, dbpath, startid, endid):
-		self.database = SqliteDict(dbpath, tablename="tpb", autocommit=False)
+		self.database = SqliteMultithread(dbpath, autocommit=False, journal_mode="DELETE")
+		self.database.execute('CREATE TABLE IF NOT EXISTS tpb (tid INTEGER PRIMARY KEY, title TEXT, user TEXT, date TEXT, seeders INTEGER, leechers INTEGER, comment TEXT, magnet TEXT, category TEXT, tags TEXT)')
+		self.database.commit()
 		self.startid = startid
 		self.endid = endid
 		proxies = {}
@@ -62,7 +64,7 @@ class TPBScraper:
 		isfound = not "<title>Not Found | The Pirate Bay" in req.text
 		if req.status_code == 200 and isfound:
 			print "found:", tid
-			self.database[str(tid)] = page_parse(req.text)
+			self.database.execute('INSERT OR REPLACE INTO tpb (tid, title, user, date, seeders, leechers, comment, magnet, category, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (tid,) + page_parse(req.text))
 		elif req.status_code == 404 or not isfound:
 			print "torrent/%i: Not found" % tid
 		else:
