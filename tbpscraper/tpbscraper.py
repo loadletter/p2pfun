@@ -1,8 +1,7 @@
 import sys, json
-from multiprocessing.pool import ThreadPool
 import requests
 from BeautifulSoup import BeautifulSoup
-from sqlitedict import SqliteDict
+from sqlitedict import SqliteMultithread
 
 HTTP_PROXY = ""
 TPB_URL = "http://uj3wazyk5u4hnvtk.onion"
@@ -49,7 +48,22 @@ class TPBScraper:
 			for j in xrange(i, i + NUM_CHUNK):
 				if j > self.endid:
 					break
-				pool.apply_async(self.downloader, (j,))
+				
+				#dlthreads = []
+				#for n in range(0, DOWN_THREADS):
+					#DlThread = Thread(target=worker, args=(namelist, resultlist))
+					#DlThread.daemon=True
+					#DlThread.start()
+					#dlthreads.append(DlThread)
+				#for dlthread in dlthreads:
+					#dlthread.join()
+
+				#or
+				
+				#start thread
+				#while dlthreads > NUM_TREADS: sleep 1
+
+
 				i += 1
 			pool.close()
 			pool.join()
