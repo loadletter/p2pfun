@@ -61,8 +61,8 @@ class TPBScraper:
 		
 	def crawl(self):
 		i = self.startid
+		pool = ThreadPool(NUM_THREADS)
 		while i <= self.endid:
-			pool = ThreadPool(NUM_THREADS)
 			print "queue: %i ==> %i" % (i, i + NUM_CHUNK)
 			for j in xrange(i, i + NUM_CHUNK):
 				if j > self.endid:
