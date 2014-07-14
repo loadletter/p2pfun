@@ -87,7 +87,7 @@ class TPBScraper:
 			else:
 				print "torrent/%i: %i %s" % (tid, req.status_code, req.error)
 		except Exception, e:
-			print "torrent/%i:Exception %s" % repr(e)
+			print "torrent/%i:Exception %s" % (tid, repr(e))
 
 if __name__ == "__main__":
 	if len(sys.argv) == 4:
