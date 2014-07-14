@@ -40,7 +40,7 @@ def page_parse(data):
 		user = byuser.findAll('i')[0].text
 	seeders = find_tag("Seeders:", '0', dl1, dl2)
 	leechers = find_tag("Leechers:", '0', dl1, dl2)
-	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href'].split('&')[0]
+	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href'].split('&')[0].replace('magnet:?xt=urn:btih:', '')
 	comment = soup.findAll('div', {'class' : 'nfo'})[0].text
 	return (title, user, dateup, int(seeders), int(leechers), comment, magnet, category, json.dumps(tags))
 	
