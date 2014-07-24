@@ -1,4 +1,4 @@
-import sys, json
+import sys, json, re
 import requests
 from BeautifulSoup import BeautifulSoup
 from sqlitedict import SqliteMultithread
@@ -20,11 +20,14 @@ def find_tag(tagname, alt, *dls):
 					return d.findAll('dd')[i]
 	return alt
 
+SIZE_REGEX = re.compile('(\d+)')
+
 def page_parse(data):
 	soup = BeautifulSoup(data)
 	dl1 = soup.findAll('dl', {'class' : 'col1'})[0]
 	dl2 = soup.findAll('dl', {'class' : 'col2'})[0]
-	size = find_tag("Size:", '', dl1, dl2).replace('&nbsp;',' ')
+	rawsize = find_tag("Size:", '', dl1, dl2).replace('&nbsp;',' ')
+	size = re.findall(SIZE_REGEX, rawsize)[-1]
 	category = soup.findAll('a', {'title' : 'More from this category'})[0].text.replace(' &gt; ', '>')
 	tags = []
 	rawtags = find_tag("Tag(s):", None, dl1, dl2)
@@ -42,12 +45,12 @@ def page_parse(data):
 	leechers = find_tag("Leechers:", '0', dl1, dl2)
 	magnet = soup.findAll('a', {'title' : 'Get this torrent'})[0]['href'].split('&')[0]
 	comment = soup.findAll('div', {'class' : 'nfo'})[0].text
-	return (title, user, dateup, int(seeders), int(leechers), comment, magnet, category, json.dumps(tags))
+	return (title, user, dateup, int(size), int(seeders), int(leechers), comment, magnet, category, json.dumps(tags))
 	
 class TPBScraper:
 	def __init__(self, dbpath, startid, endid):
 		self.database = SqliteMultithread(dbpath, autocommit=False, journal_mode="DELETE")
-		self.database.execute('CREATE TABLE IF NOT EXISTS tpb (tid INTEGER PRIMARY KEY, title TEXT, user TEXT, date TEXT, seeders INTEGER, leechers INTEGER, comment TEXT, magnet TEXT, category TEXT, tags TEXT)')
+		self.database.execute('CREATE TABLE IF NOT EXISTS tpb (tid INTEGER PRIMARY KEY, title TEXT, user TEXT, date TEXT, size INTEGER, seeders INTEGER, leechers INTEGER, comment TEXT, magnet TEXT, category TEXT, tags TEXT)')
 		self.database.commit()
 		self.startid = startid
 		self.endid = endid
@@ -81,13 +84,13 @@ class TPBScraper:
 			req = self.session.get("%s/torrent/%i" % (TPB_URL, tid), timeout=120, headers={"accept-language": "en"})
 			if req.status_code == 200:
 				print "found:", tid
-				self.database.execute('INSERT OR REPLACE INTO tpb (tid, title, user, date, seeders, leechers, comment, magnet, category, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (tid,) + page_parse(req.text))
+				self.database.execute('INSERT OR REPLACE INTO tpb (tid, title, user, date, size, seeders, leechers, comment, magnet, category, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (tid,) + page_parse(req.text))
 			elif req.status_code == 404:
 				print "torrent/%i:NotFound" % tid
 			else:
 				print "torrent/%i: %i %s" % (tid, req.status_code, req.error)
 		except Exception, e:
-			print "torrent/%i:Exception %s" % repr(e)
+			print "torrent/%i:Exception %s" % (tid, repr(e))
 
 if __name__ == "__main__":
 	if len(sys.argv) == 4:
