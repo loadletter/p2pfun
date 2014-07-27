@@ -84,7 +84,7 @@ class TPBScraper:
 			req = self.session.get("%s/torrent/%i" % (TPB_URL, tid), timeout=120, headers={"accept-language": "en"})
 			if req.status_code == 200:
 				print "found:", tid
-				self.database.execute('INSERT OR REPLACE INTO tpb (tid, title, user, date, size, seeders, leechers, comment, magnet, category, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (tid,) + page_parse(req.text))
+				self.database.execute('INSERT OR REPLACE INTO tpb (tid, title, user, date, size, seeders, leechers, comment, magnet, category, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (tid,) + page_parse(req.text))
 			elif req.status_code == 404:
 				print "torrent/%i:NotFound" % tid
 			else:
