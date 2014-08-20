@@ -87,7 +87,7 @@ class DHTCrawler(DHT):
 		except IndexError:
 			#TODO: select some from db order by lastmodified and append them to searchqueue
 			#lastmod should be updated just after the select so another instance doesn't pick the same up
-		
+			#or use SELECT WHERE mid % nshards = 0
 		while self.search(mag) == True and len(self.searchqueue) > 0:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 		
