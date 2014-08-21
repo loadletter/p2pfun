@@ -90,6 +90,7 @@ class DHTCrawler(DHT):
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 	
 	def _result_do(self):
+		#TODO
 		if len(self.resultqueue) > UPDATEN:
 			with self.conn.cursor() as cur:
 				cur.executemany(DB_EXEC_INSERT_ADDRESSES, self.resultqueue)
@@ -97,7 +98,7 @@ class DHTCrawler(DHT):
 				
 	def loop(self):
 		self.searchqueue = []
-		self.resultqueue = []
+		self.compresults = {}
 		self.tempresults = {}
 		self.tempresults[self.EVENT_VALUES] = {}
 		self.tempresults[self.EVENT_VALUES6] = {}
@@ -123,7 +124,13 @@ class DHTCrawler(DHT):
 				tmpres[infohash] = set(data)
 		if ev in [self.EVENT_SEARCH_DONE, self.EVENT_SEARCH_DONE6] and infohash in tmpres:
 			res = tmpres.pop(infohash)
-			self.resultqueue.append(res)
+			if infohash in self.compresults:
+				self.compresults[infohash].update(res)
+				#alredy in complete, must have completed both v6 and v4
+				#TODO: best way to make this go to the database
+			else:
+				self.compresults[infohash] = res
+
 		print "Nodes", repr(self.nodes(self.IPV4))
 		print "Nodes6", repr(self.nodes(self.IPV6))
 		print "Event", repr(ev)
