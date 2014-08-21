@@ -5,7 +5,7 @@ from dht import DHT, DHTError
 
 DB_EXEC_INIT = """CREATE TABLE IF NOT EXISTS magnets (mid SERIAL UNIQUE, magnet CHAR(64) NOT NULL PRIMARY KEY, lastupdated INTEGER)
 CREATE TABLE IF NOT EXISTS addrmap (mid INTEGER REFERENCES magnets(mid) ON DELETE CASCADE, aid INTEGER REFERENCES addresses(aid) ON DELETE CASCADE, firstseen INTEGER, lastseen INTEGER, PRIMARY KEY(mid, aid))
-CREATE TABLE IF NOT EXISTS addresses (aid SERIAL UNIQUE, ipaddr INET NOT NULL PRIMARY KEY)"""
+CREATE TABLE IF NOT EXISTS addresses (aid SERIAL UNIQUE, ipaddr INET NOT NULL, iport INTEGER NOT NULL, PRIMARY KEY(ipaddr, iport))"""
 
 DB_EXEC_UPSERT_MAGNETS = """LOCK TABLE magnets IN SHARE ROW EXCLUSIVE MODE
 WITH new_magnets (magnet, lastupdated) AS (
@@ -52,17 +52,15 @@ WHERE NOT EXISTS (SELECT 1
 """
 
 DB_EXEC_INSERT_ADDRESSES = """
-WITH new_addresses (ipaddr) AS (
-  values 
-    (%s)
+WITH new_addresses (ipaddr, iport) AS (
+  values
+    (%s, %s)
 )
-INSERT INTO addresses (ipaddr)
+INSERT INTO addresses (ipaddr, iport)
 SELECT 1
 FROM new_addresses
-WHERE
-    NOT EXISTS (
-        SELECT aid FROM addresses WHERE ipaddr = new_addresses
-    )
+WHERE NOT EXISTS (
+        SELECT aid FROM addresses WHERE ipaddr = new_addresses.ipaddr AND iport = new_addresses.iport)
 """
 
 class RateLimit:
@@ -99,9 +97,11 @@ class DHTCrawler(DHT):
 		self.searchqueue = []
 		self.resultqueue = []
 		self.tempresults = {}
+		self.tempresults[self.DHT_EVENT_VALUES] = {}
+		self.tempresults[self.DHT_EVENT_VALUES6] = {}
 		stats = RateLimit(self._print_stats)
-		search = RateLimit(self._search_do, 0.1)
-		result = RateLimit(self._result_do, 0.1)
+		search = RateLimit(self._search_do, 2)
+		result = RateLimit(self._result_do, 2)
 		while True:
 			self.do()
 			stats.do()
@@ -110,7 +110,19 @@ class DHTCrawler(DHT):
 			
 	def on_search(self, ev, infohash, data):
 		#TODO: append data to a list in tempresults, when event is search done move to resultqueue as a tuple ready to crunched by postgres
-		#if ev == self.EVENT_SEARCH_DONE or ev == EVENT_SEARCH_DONE6:
+		if ev in self.tempresults and len(data) > 0:
+			tmpres = self.tempresults[ev]
+			if infohash in self.tempresults:
+				tmpres[infohash].update(data)
+			else:
+				tmpres[infohash] = set(data)
+		#TODO
+		if ev == self.EVENT_SEARCH_DONE and infohash in tmpres:
+			res = self.tempresults[self.DHT_EVENT_VALUES].pop(infohash)
+			self.resultqueue.append(res)
+		if ev == self.EVENT_SEARCH_DONE6 and infohash in self.tempresults:
+			res = self.tempresults.pop(infohash)
+			self.resultqueue.append(res)
 		print "Nodes", repr(self.nodes(self.IPV4))
 		print "Nodes6", repr(self.nodes(self.IPV6))
 		print "Event", repr(ev)
