@@ -91,14 +91,18 @@ class DHTCrawler(DHT):
 	
 	def _result_do(self):
 		if len(self.resultqueue) > UPDATEN:
-			#todo: write to db
-	
+			with self.conn.cursor() as cur:
+				cur.executemany(DB_EXEC_INSERT_ADDRESSES, self.resultqueue)
+				self.resultqueue = []
+				
 	def loop(self):
 		self.searchqueue = []
 		self.resultqueue = []
 		self.tempresults = {}
-		self.tempresults[self.DHT_EVENT_VALUES] = {}
-		self.tempresults[self.DHT_EVENT_VALUES6] = {}
+		self.tempresults[self.EVENT_VALUES] = {}
+		self.tempresults[self.EVENT_VALUES6] = {}
+		self.tempresults[self.EVENT_SEARCH_DONE] = self.tempresults[self.EVENT_VALUES]   #references to previous dicts
+		self.tempresults[self.EVENT_SEARCH_DONE6] = self.tempresults[self.EVENT_VALUES6] #
 		stats = RateLimit(self._print_stats)
 		search = RateLimit(self._search_do, 2)
 		result = RateLimit(self._result_do, 2)
@@ -109,19 +113,16 @@ class DHTCrawler(DHT):
 			result.do()
 			
 	def on_search(self, ev, infohash, data):
-		#TODO: append data to a list in tempresults, when event is search done move to resultqueue as a tuple ready to crunched by postgres
-		if ev in self.tempresults and len(data) > 0:
-			tmpres = self.tempresults[ev]
+		if ev == self.EVENT_NONE:
+			return
+		tmpres = self.tempresults[ev] #another reference
+		if len(data) > 0:
 			if infohash in self.tempresults:
 				tmpres[infohash].update(data)
 			else:
 				tmpres[infohash] = set(data)
-		#TODO
-		if ev == self.EVENT_SEARCH_DONE and infohash in tmpres:
-			res = self.tempresults[self.DHT_EVENT_VALUES].pop(infohash)
-			self.resultqueue.append(res)
-		if ev == self.EVENT_SEARCH_DONE6 and infohash in self.tempresults:
-			res = self.tempresults.pop(infohash)
+		if ev in [self.EVENT_SEARCH_DONE, self.EVENT_SEARCH_DONE6] and infohash in tmpres:
+			res = tmpres.pop(infohash)
 			self.resultqueue.append(res)
 		print "Nodes", repr(self.nodes(self.IPV4))
 		print "Nodes6", repr(self.nodes(self.IPV6))
