@@ -1,6 +1,6 @@
 import os, sys, binascii, time
 import psycopg2
-from dbconf import DSN, PEERID
+from dbconf import DSN, PEERID, FETCHN, UPDATEN
 from dht import DHT, DHTError
 
 DB_EXEC_INIT = """CREATE TABLE IF NOT EXISTS magnets (mid SERIAL UNIQUE, magnet CHAR(64) NOT NULL PRIMARY KEY, lastupdated INTEGER)
@@ -81,28 +81,35 @@ class DHTCrawler(DHT):
 		nodes = self.nodes(self.IPV4)
 		print "Nodes:", repr(nodes)
 		
-	def search_do(self):
+	def _search_do(self):
 		try:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 		except IndexError:
-			#TODO: select some from db order by lastmodified and append them to searchqueue
-			#lastmod should be updated just after the select so another instance doesn't pick the same up
-			#or use SELECT WHERE mid % nshards = 0
+			with self.conn.cursor() as cur:
+				cur.execute('SELECT magnet FROM magnets WHERE mid % %s = %s ORDER BY lastupdated ASC LIMIT %s', (self.numworkers, self.workid, FETCHN))
+				self.searchqueue.extend(map(lambda x: x[0], cur))
 		while self.search(mag) == True and len(self.searchqueue) > 0:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
-		
-			
+	
+	def _result_do(self):
+		if len(self.resultqueue) > UPDATEN:
+			#todo: write to db
+	
 	def loop(self):
 		self.searchqueue = []
+		self.resultqueue = []
+		self.tempresults = {}
 		stats = RateLimit(self._print_stats)
-		search = RateLimit(self.search, 0.01)
+		search = RateLimit(self._search_do, 0.1)
+		result = RateLimit(self._result_do, 0.1)
 		while True:
 			self.do()
 			stats.do()
 			search.do()
+			result.do()
 			
 	def on_search(self, ev, infohash, data):
-		#TODO
+		#TODO: append data to a list in tempresults, when event is search done move to resultqueue as a tuple ready to crunched by postgres
 		#if ev == self.EVENT_SEARCH_DONE or ev == EVENT_SEARCH_DONE6:
 		print "Nodes", repr(self.nodes(self.IPV4))
 		print "Nodes6", repr(self.nodes(self.IPV6))
@@ -110,10 +117,10 @@ class DHTCrawler(DHT):
 		print "Hash", repr(infohash)
 		print "Data", repr(data)
 
-def insert_magnets(cur):
+def insert_magnets(cur, fpath):
 	maglist = []
 	linec = 0
-	with open(sys.argv[2]) as f:
+	with open(fpath) as f:
 		for line in f:
 			linec += 1
 			l = line.strip()
@@ -126,8 +133,10 @@ def main():
 	port = int(sys.argv[1])
 	Crawler = DHTCrawler(PEERID, port)
 	Crawler.conn = psycopg2.connect(DSN)
+	Crawler.numworkers = int(sys.argv[2])
+	Crawler.workid = int(sys.argv[3])
 	with conn.cursor() as initcur:
 		initcur.execute(DB_EXEC_INIT)
-		if len(sys.argv) >= 3:
-			insert_magnets(initcur)
+		if len(sys.argv) >= 5:
+			insert_magnets(initcur, sys.argv[4])
 	Crawler.loop()
