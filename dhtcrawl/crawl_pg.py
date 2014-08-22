@@ -63,6 +63,57 @@ WHERE NOT EXISTS (
         SELECT aid FROM addresses WHERE ipaddr = new_addresses.ipaddr AND iport = new_addresses.iport)
 """
 
+
+DB_BIGQUERY = """
+LOCK TABLE magnets IN SHARE ROW EXCLUSIVE MODE
+WITH new_data (magnet, lastupdated, ipaddr, iport) AS (
+  values 
+    (%s, %s, %s, %s)
+
+),
+magnets_up AS
+( 
+    update magnets m
+        SET lastupdated = nd.lastupdated
+    FROM new_data nd
+    WHERE m.magnet = nd.magnet
+    RETURNING m.*
+)
+INSERT INTO magnets (magnet, lastupdated)
+SELECT magnet, lastupdated
+FROM new_data
+WHERE NOT EXISTS (SELECT 1 
+                  FROM magnets_up up
+                  WHERE up.magnet = new_data.magnet)
+RETURNING mid INTO new_mid
+
+INSERT INTO addresses (ipaddr, iport)
+SELECT ipdaddr, iport
+FROM new_data
+WHERE NOT EXISTS (
+        SELECT aid FROM addresses WHERE ipaddr = new_data.ipaddr AND iport = new_data.iport)
+RETURNING aid INTO new_aid
+
+LOCK TABLE addrmap IN SHARE ROW EXCLUSIVE MODE
+addrmap_up AS
+( 
+    update addrmap a
+        SET lastseen = nd.lastseen
+    FROM new_data nd
+    WHERE a.mid = new_mid AND a.aid = new_aid
+    RETURNING a.*
+)
+INSERT INTO addrmap (mid, aid, firstseen, lastseen)
+
+"""#TODO
+"""
+SELECT mid, aid, lastseen, lastseen
+FROM new_addrmap
+WHERE NOT EXISTS (SELECT 1 
+                  FROM upsert up
+                  WHERE up.mid = new_addrmap.mid AND up.aid = new_addrmap.aid)
+"""
+
 class RateLimit:
 	def __init__(self, callback_func, flush_time=10):
 		self.callback_func = callback_func
@@ -92,14 +143,11 @@ class DHTCrawler(DHT):
 	def _results_process(self, infohash, data):
 		if len(data) == 0:
 			return
-		#TODO
-		data_lastmod = time.time()
-		data_addresses = data
-		data_magnets = []
-		data_addrmap = []
+		data_ascii_hash = binascii.b2a_hex(infohash)
+		data_lastmod = int(time.time())
+		data_denorm = map(lambda x: (data_ascii_hash, data_lastmod) + x, data)
 		with self.conn.cursor() as cur:
-			cur.executemany(DB_EXEC_INSERT_ADDRESSES, self.resultqueue)
-			self.resultqueue = []
+			cur.executemany(DB_BIGQUERY, data_denorm)
 				
 	def loop(self):
 		self.searchqueue = []
