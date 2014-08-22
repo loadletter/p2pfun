@@ -1,6 +1,6 @@
 import os, sys, binascii, time
 import psycopg2
-from dbconf import DSN, PEERID, FETCHN, UPDATEN
+from dbconf import DSN, PEERID, FETCHN
 from dht import DHT, DHTError
 
 DB_EXEC_INIT = """CREATE TABLE IF NOT EXISTS magnets (mid SERIAL UNIQUE, magnet CHAR(64) NOT NULL PRIMARY KEY, lastupdated INTEGER)
@@ -89,16 +89,21 @@ class DHTCrawler(DHT):
 		while self.search(mag) == True and len(self.searchqueue) > 0:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 	
-	def _result_do(self):
+	def _results_process(self, infohash, data):
+		if len(data) == 0:
+			return
 		#TODO
-		if len(self.resultqueue) > UPDATEN:
-			with self.conn.cursor() as cur:
-				cur.executemany(DB_EXEC_INSERT_ADDRESSES, self.resultqueue)
-				self.resultqueue = []
+		data_lastmod = time.time()
+		data_addresses = data
+		data_magnets = []
+		data_addrmap = []
+		with self.conn.cursor() as cur:
+			cur.executemany(DB_EXEC_INSERT_ADDRESSES, self.resultqueue)
+			self.resultqueue = []
 				
 	def loop(self):
 		self.searchqueue = []
-		self.compresults = {}
+		self.halfresults = {}
 		self.tempresults = {}
 		self.tempresults[self.EVENT_VALUES] = {}
 		self.tempresults[self.EVENT_VALUES6] = {}
@@ -106,17 +111,15 @@ class DHTCrawler(DHT):
 		self.tempresults[self.EVENT_SEARCH_DONE6] = self.tempresults[self.EVENT_VALUES6] #
 		stats = RateLimit(self._print_stats)
 		search = RateLimit(self._search_do, 2)
-		result = RateLimit(self._result_do, 2)
 		while True:
 			self.do()
 			stats.do()
 			search.do()
-			result.do()
 			
 	def on_search(self, ev, infohash, data):
 		if ev == self.EVENT_NONE:
 			return
-		tmpres = self.tempresults[ev] #another reference
+		tmpres = self.tempresults[ev] #another reference, to automatically handle 4/6
 		if len(data) > 0:
 			if infohash in self.tempresults:
 				tmpres[infohash].update(data)
@@ -124,12 +127,13 @@ class DHTCrawler(DHT):
 				tmpres[infohash] = set(data)
 		if ev in [self.EVENT_SEARCH_DONE, self.EVENT_SEARCH_DONE6] and infohash in tmpres:
 			res = tmpres.pop(infohash)
-			if infohash in self.compresults:
-				self.compresults[infohash].update(res)
+			if infohash in self.halfresults:
+				self.halfresults[infohash].update(res)
 				#alredy in complete, must have completed both v6 and v4
-				#TODO: best way to make this go to the database
+				compresult = self.halfresults.pop(infohash)
+				self._results_process(infohash, compresult)
 			else:
-				self.compresults[infohash] = res
+				self.halfresults[infohash] = res
 
 		print "Nodes", repr(self.nodes(self.IPV4))
 		print "Nodes6", repr(self.nodes(self.IPV6))
