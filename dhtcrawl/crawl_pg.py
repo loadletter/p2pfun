@@ -1,7 +1,9 @@
 import os, sys, binascii, time
 import psycopg2
-from dbconf import DSN, PEERID, FETCHN, BOOTSTRAPN, BOOTLIMIT
+from dbconf import DSN, FETCHN, BOOTSTRAPN, BOOTLIMIT
 from dht import DHT, DHTError
+
+PEERID = os.urandom(20)
 
 class RateLimit:
 	def __init__(self, callback_func, flush_time=10):
@@ -88,18 +90,6 @@ class DHTCrawler(DHT):
 		print "Event", repr(ev)
 		print "Hash", repr(infohash)
 		print "Data", repr(data)
-
-def insert_magnets(cur, fpath):
-	maglist = []
-	linec = 0
-	with open(fpath) as f:
-		for line in f:
-			linec += 1
-			l = line.strip()
-			if len(l) == 64:
-				maglist.append((l, 0))
-	print len(maglist), "/", linec
-	cur.executemany(DB_EXEC_UPSERT_MAGNETS, maglist)
 	
 def main():
 	port = int(sys.argv[1])
@@ -107,7 +97,4 @@ def main():
 	Crawler.conn = psycopg2.connect(DSN)
 	Crawler.numworkers = int(sys.argv[2])
 	Crawler.workid = int(sys.argv[3])
-	if len(sys.argv) >= 5:
-		with conn.cursor() as initcur:
-			insert_magnets(initcur, sys.argv[4])
 	Crawler.loop()
