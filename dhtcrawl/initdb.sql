@@ -1,8 +1,8 @@
-CREATE TABLE IF NOT EXISTS magnets (mid SERIAL UNIQUE, magnet CHAR(64) NOT NULL PRIMARY KEY, lastupdated INTEGER);
-CREATE TABLE IF NOT EXISTS addrmap (mid INTEGER REFERENCES magnets(mid) ON DELETE CASCADE, aid INTEGER REFERENCES addresses(aid) ON DELETE CASCADE, firstseen INTEGER, lastseen INTEGER, PRIMARY KEY(mid, aid));
+CREATE TABLE IF NOT EXISTS magnets (mid SERIAL UNIQUE, magnet CHAR(40) NOT NULL PRIMARY KEY, lastupdated INTEGER);
 CREATE TABLE IF NOT EXISTS addresses (aid SERIAL UNIQUE, ipaddr INET NOT NULL, iport INTEGER NOT NULL, PRIMARY KEY(ipaddr, iport));
+CREATE TABLE IF NOT EXISTS addrmap (mid INTEGER REFERENCES magnets(mid) ON DELETE CASCADE, aid INTEGER REFERENCES addresses(aid) ON DELETE CASCADE, firstseen INTEGER, lastseen INTEGER, PRIMARY KEY(mid, aid));
 
-CREATE OR REPLACE FUNCTION insert_update_addr(new_magnet CHAR(64), new_lastupdated INTEGER, new_ipaddr INET, new_iport INTEGER) RETURNS integer AS $$
+CREATE OR REPLACE FUNCTION insert_update_addr(new_magnet CHAR(40), new_lastupdated INTEGER, new_ipaddr INET, new_iport INTEGER) RETURNS integer AS $$
 DECLARE
 	new_mid INTEGER;
 	new_aid INTEGER;
@@ -52,5 +52,16 @@ BEGIN
 					  WHERE up.mid = new_mid AND up.aid = new_aid)
 	RETURNING lastseen INTO retval;
 	RETURN retval;	
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION insert_new_magnet(new_magnet CHAR(40)) RETURNS void AS $$
+BEGIN
+	SET LOCAL synchronous_commit TO OFF;
+	INSERT INTO magnets (magnet, lastupdated)
+	SELECT new_magnet, 0
+	WHERE NOT EXISTS (SELECT 1 
+					  FROM magnets m
+					  WHERE m.magnet = new_magnet);
 END;
 $$ LANGUAGE plpgsql;

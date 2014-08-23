@@ -3,20 +3,14 @@ import re
 import psycopg2
 from dbconf import DSN
 
-DB_EXEC_INSERT_NEW_MAGNETS = """LOCK TABLE magnets IN SHARE ROW EXCLUSIVE MODE
-WITH new_magnets (magnet, lastupdated) AS (
-  values 
-    (%s, %s)
-)
-INSERT INTO magnets (magnet, lastupdated)
-SELECT magnet, lastupdated
-FROM new_magnets
-WHERE NOT EXISTS (SELECT 1 
-                  FROM magnets m
-                  WHERE m.magnet = new_magnets.magnet)
-"""
+ASCIIHEX40_REGEX = re.compile("^[0-9a-f]{40}$")
+CHUNKSIZE = 2000
 
-ASCIIHEX64_REGEX = re.compile("^[0-9a-f]{64}$")
+def chunks(l, n):
+	""" Yield successive n-sized chunks from l.
+	"""
+	for i in xrange(0, len(l), n):
+		yield l[i:i+n]
 
 def insert_magnets(cur, fpath):
 	maglist = []
@@ -25,12 +19,17 @@ def insert_magnets(cur, fpath):
 		for line in f:
 			linec += 1
 			l = line.strip()
-			if ASCIIHEX64_REGEX.match(l):
-				maglist.append((l, 0))
+			if ASCIIHEX40_REGEX.match(l):
+				maglist.append((l,))
 	print len(maglist), "/", linec
-	cur.executemany(DB_EXEC_INSERT_NEW_MAGNETS, maglist)
+	for num, c in enumerate(chunks(maglist, CHUNKSIZE)):
+		cur.executemany('SELECT insert_new_magnet(%s)', c)
+		conn.commit()
+		print num * CHUNKSIZE
 
 if __name__ == "__main__":
 	conn = psycopg2.connect(DSN)
-	with conn.cursor() as initcur:
-		insert_magnets(initcur, sys.argv[1])
+	with conn.cursor() as cur:
+		insert_magnets(cur, sys.argv[1])
+	conn.commit()
+	conn.close()

@@ -28,6 +28,7 @@ class DHTCrawler(DHT):
 			with self.conn.cursor() as cur:
 				cur.execute('SELECT magnet FROM magnets WHERE mid % %s = %s ORDER BY lastupdated ASC LIMIT %s', (self.numworkers, self.workid, FETCHN))
 				self.searchqueue.extend(map(lambda x: x[0], cur))
+			conn.commit()
 		while self.search(mag) == True and len(self.searchqueue) > 0:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 	
@@ -39,6 +40,7 @@ class DHTCrawler(DHT):
 			cur.execute('SELECT ipaddr, iport FROM addresses OFFSET RANDOM() * (SELECT COUNT(*) FROM addresses) LIMIT %s', (BOOTSTRAPN,))
 			for row in cur:
 				apply(self.ping, row)
+		conn.commit()
 	
 	def _results_process(self, infohash, data):
 		if len(data) == 0:
@@ -48,6 +50,7 @@ class DHTCrawler(DHT):
 		data_denorm = map(lambda x: (data_ascii_hash, data_lastmod) + x, data)
 		with self.conn.cursor() as cur:
 			cur.executemany('SELECT insert_update_addr(%s, %s, %s, %s)', data_denorm)
+		conn.commit()
 				
 	def loop(self):
 		self.searchqueue = []
@@ -97,4 +100,7 @@ def main():
 	Crawler.conn = psycopg2.connect(DSN)
 	Crawler.numworkers = int(sys.argv[2])
 	Crawler.workid = int(sys.argv[3])
-	Crawler.loop()
+	try:
+		Crawler.loop()
+	except KeyboardInterrupt, SystemExit:
+		conn.close()
