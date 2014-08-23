@@ -3,117 +3,6 @@ import psycopg2
 from dbconf import DSN, PEERID, FETCHN
 from dht import DHT, DHTError
 
-DB_EXEC_INIT = """CREATE TABLE IF NOT EXISTS magnets (mid SERIAL UNIQUE, magnet CHAR(64) NOT NULL PRIMARY KEY, lastupdated INTEGER)
-CREATE TABLE IF NOT EXISTS addrmap (mid INTEGER REFERENCES magnets(mid) ON DELETE CASCADE, aid INTEGER REFERENCES addresses(aid) ON DELETE CASCADE, firstseen INTEGER, lastseen INTEGER, PRIMARY KEY(mid, aid))
-CREATE TABLE IF NOT EXISTS addresses (aid SERIAL UNIQUE, ipaddr INET NOT NULL, iport INTEGER NOT NULL, PRIMARY KEY(ipaddr, iport))"""
-
-DB_EXEC_UPSERT_MAGNETS = """LOCK TABLE magnets IN SHARE ROW EXCLUSIVE MODE
-WITH new_magnets (magnet, lastupdated) AS (
-  values 
-    (%s, %s)
-
-),
-upsert AS
-( 
-    update magnets m
-        SET lastupdated = nm.lastupdated
-    FROM new_magnets nm
-    WHERE m.magnet = nm.magnet
-    RETURNING m.*
-)
-INSERT INTO magnets (magnet, lastupdated)
-SELECT magnet, lastupdated
-FROM new_magnets
-WHERE NOT EXISTS (SELECT 1 
-                  FROM upsert up
-                  WHERE up.magnet = new_magnets.magnet)
-"""
-
-DB_EXEC_UPSERT_ADDRMAP = """LOCK TABLE addrmap IN SHARE ROW EXCLUSIVE MODE
-WITH new_addrmap (mid, aid, lastseen) AS (
-  values 
-    (%s, %s, %s, %s)
-
-),
-upsert AS
-( 
-    update addrmap a
-        SET lastseen = na.lastseen
-    FROM new_addrmap na
-    WHERE a.mid = na.mid AND a.aid = na.aid
-    RETURNING a.*
-)
-INSERT INTO addrmap (mid, aid, firstseen, lastseen)
-SELECT mid, aid, lastseen, lastseen
-FROM new_addrmap
-WHERE NOT EXISTS (SELECT 1 
-                  FROM upsert up
-                  WHERE up.mid = new_addrmap.mid AND up.aid = new_addrmap.aid)
-"""
-
-DB_EXEC_INSERT_ADDRESSES = """
-WITH new_addresses (ipaddr, iport) AS (
-  values
-    (%s, %s)
-)
-INSERT INTO addresses (ipaddr, iport)
-SELECT 1
-FROM new_addresses
-WHERE NOT EXISTS (
-        SELECT aid FROM addresses WHERE ipaddr = new_addresses.ipaddr AND iport = new_addresses.iport)
-"""
-
-
-DB_BIGQUERY = """
-LOCK TABLE magnets IN SHARE ROW EXCLUSIVE MODE
-WITH new_data (magnet, lastupdated, ipaddr, iport) AS (
-  values 
-    (%s, %s, %s, %s)
-
-),
-magnets_up AS
-( 
-    update magnets m
-        SET lastupdated = nd.lastupdated
-    FROM new_data nd
-    WHERE m.magnet = nd.magnet
-    RETURNING m.*
-)
-INSERT INTO magnets (magnet, lastupdated)
-SELECT magnet, lastupdated
-FROM new_data
-WHERE NOT EXISTS (SELECT 1 
-                  FROM magnets_up up
-                  WHERE up.magnet = new_data.magnet)
-RETURNING mid INTO new_mid
-
-INSERT INTO addresses (ipaddr, iport)
-SELECT ipdaddr, iport
-FROM new_data
-WHERE NOT EXISTS (
-        SELECT aid FROM addresses WHERE ipaddr = new_data.ipaddr AND iport = new_data.iport)
-RETURNING aid INTO new_aid
-
-LOCK TABLE addrmap IN SHARE ROW EXCLUSIVE MODE
-addrmap_up AS
-( 
-    update addrmap a
-        SET lastseen = nd.lastseen
-    FROM new_data nd
-    WHERE a.mid = new_mid AND a.aid = new_aid
-    RETURNING a.*
-)
-INSERT INTO addrmap (mid, aid, firstseen, lastseen)
-
-"""#TODO
-"""
-SELECT mid, aid, lastseen, lastseen
-FROM new_addrmap
-WHERE NOT EXISTS (SELECT 1 
-                  FROM upsert up
-                  WHERE up.mid = new_addrmap.mid AND up.aid = new_addrmap.aid)
-"""
-
 class RateLimit:
 	def __init__(self, callback_func, flush_time=10):
 		self.callback_func = callback_func
@@ -207,8 +96,7 @@ def main():
 	Crawler.conn = psycopg2.connect(DSN)
 	Crawler.numworkers = int(sys.argv[2])
 	Crawler.workid = int(sys.argv[3])
-	with conn.cursor() as initcur:
-		initcur.execute(DB_EXEC_INIT)
-		if len(sys.argv) >= 5:
+	if len(sys.argv) >= 5:
+		with conn.cursor() as initcur:
 			insert_magnets(initcur, sys.argv[4])
 	Crawler.loop()
