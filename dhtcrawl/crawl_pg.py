@@ -1,6 +1,6 @@
 import os, sys, binascii, time
 import psycopg2
-from dbconf import DSN, PEERID, FETCHN
+from dbconf import DSN, PEERID, FETCHN, BOOTSTRAPN, BOOTLIMIT
 from dht import DHT, DHTError
 
 class RateLimit:
@@ -29,6 +29,15 @@ class DHTCrawler(DHT):
 		while self.search(mag) == True and len(self.searchqueue) > 0:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 	
+	def _bootstrap_do(self):
+		n = self.nodes(self.IPV4)
+		if n[0] > BOOTLIMIT:
+			return
+		with self.conn.cursor() as cur:
+			cur.execute('SELECT ipaddr, iport FROM addresses OFFSET RANDOM() * (SELECT COUNT(*) FROM addresses) LIMIT %s', (BOOTSTRAPN,))
+			for row in cur:
+				apply(self.ping, row)
+	
 	def _results_process(self, infohash, data):
 		if len(data) == 0:
 			return
@@ -36,7 +45,7 @@ class DHTCrawler(DHT):
 		data_lastmod = int(time.time())
 		data_denorm = map(lambda x: (data_ascii_hash, data_lastmod) + x, data)
 		with self.conn.cursor() as cur:
-			cur.executemany(DB_BIGQUERY, data_denorm)
+			cur.executemany('SELECT insert_update_addr(%s, %s, %s, %s)', data_denorm)
 				
 	def loop(self):
 		self.searchqueue = []
@@ -48,10 +57,12 @@ class DHTCrawler(DHT):
 		self.tempresults[self.EVENT_SEARCH_DONE6] = self.tempresults[self.EVENT_VALUES6] #
 		stats = RateLimit(self._print_stats)
 		search = RateLimit(self._search_do, 2)
+		bootstrap = RateLimit(self._bootstrap_do, 60)
 		while True:
 			self.do()
 			stats.do()
 			search.do()
+			bootstrap.do()
 			
 	def on_search(self, ev, infohash, data):
 		if ev == self.EVENT_NONE:
