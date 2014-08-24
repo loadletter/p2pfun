@@ -65,3 +65,13 @@ BEGIN
 					  WHERE m.magnet = new_magnet);
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION insert_new_address(new_ipaddr INET, new_iport INTEGER) RETURNS void AS $$
+BEGIN
+	SET LOCAL synchronous_commit TO OFF;
+	INSERT INTO addresses (ipaddr, iport)
+	SELECT new_ipaddr, new_iport
+	WHERE NOT EXISTS (
+			SELECT aid FROM addresses WHERE addresses.ipaddr = new_ipaddr AND addresses.iport = new_iport);
+END;
+$$ LANGUAGE plpgsql;

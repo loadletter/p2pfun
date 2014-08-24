@@ -1,9 +1,10 @@
-import os, sys, binascii, time
+import os, sys, binascii, time, logging
 import psycopg2
-from dbconf import DSN, FETCHN, BOOTSTRAPN, BOOTLIMIT
+from dbconf import DSN, FETCHN, BOOTSTRAPN, BOOTLIMIT, LOGFILE
 from dht import DHT, DHTError
 
 PEERID = os.urandom(20)
+LOGLEVEL = logging.DEBUG
 
 class RateLimit:
 	def __init__(self, callback_func, flush_time=10):
@@ -19,9 +20,12 @@ class RateLimit:
 class DHTCrawler(DHT):
 	def _print_stats(self):
 		nodes = self.nodes(self.IPV4)
-		print "Nodes:", repr(nodes)
+		logging.info("Nodes: %s", repr(nodes))
 		
 	def _search_do(self):
+		n = self.nodes(self.IPV4)
+		if n[0] < BOOTLIMIT/2:
+			return
 		try:
 			mag = binascii.a2b_hex(self.searchqueue.pop())
 		except IndexError:
@@ -31,6 +35,7 @@ class DHTCrawler(DHT):
 			self.conn.commit()
 		else:
 			while self.search(mag) == True and len(self.searchqueue) > 0:
+				logging.debug("SCH: %s", binascii.b2a_hex(mag))
 				mag = binascii.a2b_hex(self.searchqueue.pop())
 	
 	def _bootstrap_do(self):
@@ -40,6 +45,7 @@ class DHTCrawler(DHT):
 		with self.conn.cursor() as cur:
 			cur.execute('SELECT ipaddr, iport FROM addresses OFFSET RANDOM() * (SELECT COUNT(*) FROM addresses) LIMIT %s', (BOOTSTRAPN,))
 			for row in cur:
+				logging.debug("BOOT: %s", repr(row))
 				apply(self.ping, row)
 		self.conn.commit()
 	
@@ -63,7 +69,7 @@ class DHTCrawler(DHT):
 		self.tempresults[self.EVENT_SEARCH_DONE6] = self.tempresults[self.EVENT_VALUES6] #
 		stats = RateLimit(self._print_stats)
 		search = RateLimit(self._search_do, 2)
-		bootstrap = RateLimit(self._bootstrap_do, 60)
+		bootstrap = RateLimit(self._bootstrap_do, 30)
 		while True:
 			self.do()
 			stats.do()
@@ -73,9 +79,11 @@ class DHTCrawler(DHT):
 	def on_search(self, ev, infohash, data):
 		if ev == self.EVENT_NONE:
 			return
+		if ev in [self.EVENT_VALUES, self.EVENT_VALUES6]:
+			logging.debug("VAL: %s %i", binascii.b2a_hex(infohash), len(data))
 		tmpres = self.tempresults[ev] #another reference, to automatically handle 4/6
 		if len(data) > 0:
-			if infohash in self.tempresults:
+			if infohash in tmpres:
 				tmpres[infohash].update(data)
 			else:
 				tmpres[infohash] = set(data)
@@ -86,15 +94,10 @@ class DHTCrawler(DHT):
 				#alredy in complete, must have completed both v6 and v4
 				compresult = self.halfresults.pop(infohash)
 				self._results_process(infohash, compresult)
+				logging.debug("DONE: %s", binascii.b2a_hex(infohash))
 			else:
 				self.halfresults[infohash] = res
-
-		print "Nodes", repr(self.nodes(self.IPV4))
-		print "Nodes6", repr(self.nodes(self.IPV6))
-		print "Event", repr(ev)
-		print "Hash", repr(infohash)
-		print "Data", repr(data)
-	
+					
 def main():
 	port = int(sys.argv[1])
 	Crawler = DHTCrawler(PEERID, port)
@@ -104,7 +107,16 @@ def main():
 	try:
 		Crawler.loop()
 	except KeyboardInterrupt, SystemExit:
+		with Crawler.conn.cursor() as cur:
+			n, n6 = Crawler.get_nodes()
+			cur.executemany('SELECT insert_new_address(%s,%s)', n + n6)
+			logging.info("SAVED: %i (%i/%i)", len(n) + len(n6), len(n), len(n6))
+		Crawler.conn.commit()
 		Crawler.conn.close()
 
 if __name__ == "__main__":
+	if LOGFILE == '':
+		logging.basicConfig(level=LOGLEVEL, format='%(asctime)s - %(levelname)s - %(message)s')
+	else:
+		logging.basicConfig(filename=LOGFILE, level=LOGLEVEL, format='%(asctime)s - %(levelname)s - %(message)s')
 	main()
