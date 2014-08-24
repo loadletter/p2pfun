@@ -3,7 +3,16 @@ import psycopg2
 from dbconf import DSN, FETCHN, BOOTSTRAPN, BOOTLIMIT, LOGFILE
 from dht import DHT, DHTError
 
-PEERID = os.urandom(20)
+#LOGFILE=''
+#FETCHN=4000
+#BOOTSTRAPN=8
+#BOOTLIMIT=40
+
+try:
+	from dbconf import PEERID
+except ImportError:
+	PEERID = os.urandom(20)
+
 LOGLEVEL = logging.DEBUG
 
 class RateLimit:
@@ -27,16 +36,22 @@ class DHTCrawler(DHT):
 		if n[0] < BOOTLIMIT/2:
 			return
 		try:
-			mag = binascii.a2b_hex(self.searchqueue.pop())
+			mag = self.searchqueue.pop()
 		except IndexError:
 			with self.conn.cursor() as cur:
 				cur.execute('SELECT magnet FROM magnets WHERE mid %% %s = %s ORDER BY lastupdated ASC LIMIT %s', (self.numworkers, self.workid, FETCHN))
 				self.searchqueue.extend(map(lambda x: x[0], cur))
 			self.conn.commit()
 		else:
-			while self.search(mag) == True and len(self.searchqueue) > 0:
-				logging.debug("SCH: %s", binascii.b2a_hex(mag))
-				mag = binascii.a2b_hex(self.searchqueue.pop())
+			search_mag = True
+			while search_mag and len(self.searchqueue) > 0:
+				search_mag = self.search(binascii.a2b_hex(mag))
+				if search_mag:
+					logging.debug("SCH: %s", mag)
+					mag = self.searchqueue.pop()
+				else:
+					logging.debug("SCH FULL AT %s", mag)
+					self.searchqueue.append(mag)
 	
 	def _bootstrap_do(self):
 		n = self.nodes(self.IPV4)
@@ -50,25 +65,20 @@ class DHTCrawler(DHT):
 		self.conn.commit()
 	
 	def _results_process(self, infohash, data):
-		if len(data) == 0:
-			return
-		data_ascii_hash = binascii.b2a_hex(infohash)
 		data_lastmod = int(time.time())
-		data_denorm = map(lambda x: (data_ascii_hash, data_lastmod) + x, data)
-		with self.conn.cursor() as cur:
-			cur.executemany('SELECT insert_update_addr(%s, %s, %s, %s)', data_denorm)
+		if len(data) == 0:
+			with self.conn.cursor() as cur:
+				cur.execute('UPDATE magnets SET lastupdated = %s WHERE magnet = %s', (data_lastmod, infohash))
+		else:
+			data_denorm = map(lambda x: (infohash, data_lastmod) + x, data)
+			with self.conn.cursor() as cur:
+				cur.executemany('SELECT insert_update_addr(%s, %s, %s, %s)', data_denorm)
 		self.conn.commit()
 				
 	def loop(self):
 		self.searchqueue = []
-		self.halfresults = {}
-		self.tempresults = {}
-		self.tempresults[self.EVENT_VALUES] = {}
-		self.tempresults[self.EVENT_VALUES6] = {}
-		self.tempresults[self.EVENT_SEARCH_DONE] = self.tempresults[self.EVENT_VALUES]   #references to previous dicts
-		self.tempresults[self.EVENT_SEARCH_DONE6] = self.tempresults[self.EVENT_VALUES6] #
 		stats = RateLimit(self._print_stats)
-		search = RateLimit(self._search_do, 2)
+		search = RateLimit(self._search_do, 5)
 		bootstrap = RateLimit(self._bootstrap_do, 30)
 		while True:
 			self.do()
@@ -79,24 +89,13 @@ class DHTCrawler(DHT):
 	def on_search(self, ev, infohash, data):
 		if ev == self.EVENT_NONE:
 			return
+		ascii_infohash = binascii.b2a_hex(infohash)
 		if ev in [self.EVENT_VALUES, self.EVENT_VALUES6]:
-			logging.debug("VAL: %s %i", binascii.b2a_hex(infohash), len(data))
-		tmpres = self.tempresults[ev] #another reference, to automatically handle 4/6
-		if len(data) > 0:
-			if infohash in tmpres:
-				tmpres[infohash].update(data)
-			else:
-				tmpres[infohash] = set(data)
-		if ev in [self.EVENT_SEARCH_DONE, self.EVENT_SEARCH_DONE6] and infohash in tmpres:
-			res = tmpres.pop(infohash)
-			if infohash in self.halfresults:
-				self.halfresults[infohash].update(res)
-				#alredy in complete, must have completed both v6 and v4
-				compresult = self.halfresults.pop(infohash)
-				self._results_process(infohash, compresult)
-				logging.debug("DONE: %s", binascii.b2a_hex(infohash))
-			else:
-				self.halfresults[infohash] = res
+			self._results_process(ascii_infohash, data)
+			logging.debug("VAL: %s %i", ascii_infohash, len(data))
+		if ev in [self.EVENT_SEARCH_DONE, self.EVENT_SEARCH_DONE6]:
+			self._results_process(ascii_infohash, data)
+			logging.debug("DONE: %s", ascii_infohash)
 					
 def main():
 	port = int(sys.argv[1])
