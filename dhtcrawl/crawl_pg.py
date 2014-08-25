@@ -45,7 +45,7 @@ class DHTCrawler(DHT):
 			mag = self.searchqueue.pop()
 		except IndexError:
 			with self.conn.cursor() as cur:
-				cur.execute('SELECT magnet FROM magnets WHERE mid %% %s = %s ORDER BY lastupdated ASC LIMIT %s', (self.numworkers, self.workid, FETCHN))
+				cur.execute('''SELECT encode(magnet, 'hex') FROM magnets WHERE mid %% %s = %s ORDER BY lastupdated ASC LIMIT %s''', (self.numworkers, self.workid, FETCHN))
 				self.searchqueue.extend(map(lambda x: x[0], cur))
 			self.conn.commit()
 		else:
@@ -74,9 +74,9 @@ class DHTCrawler(DHT):
 		data_lastmod = int(time.time())
 		if len(data) == 0:
 			with self.conn.cursor() as cur:
-				cur.execute('UPDATE magnets SET lastupdated = %s WHERE magnet = %s', (data_lastmod, infohash))
+				cur.execute('UPDATE magnets SET lastupdated = %s WHERE magnet = %s', (data_lastmod, psycopg2.Binary(infohash)))
 		else:
-			data_denorm = map(lambda x: (infohash, data_lastmod) + x, data)
+			data_denorm = map(lambda x: (psycopg2.Binary(infohash), data_lastmod) + x, data)
 			with self.conn.cursor() as cur:
 				cur.executemany('SELECT insert_update_addr(%s, %s, %s, %s)', data_denorm)
 		self.conn.commit()
@@ -97,24 +97,30 @@ class DHTCrawler(DHT):
 			return
 		ascii_infohash = binascii.b2a_hex(infohash)
 		if ev in [self.EVENT_VALUES, self.EVENT_VALUES6]:
-			self._results_process(ascii_infohash, data)
+			self._results_process(infohash, data)
 			logging.debug("VAL: %s %i", ascii_infohash, len(data))
 		if ev in [self.EVENT_SEARCH_DONE, self.EVENT_SEARCH_DONE6]:
-			self._results_process(ascii_infohash, data)
+			self._results_process(infohash, data)
 			logging.debug("DONE: %s", ascii_infohash)
 					
 def main():
+	if len(sys.argv) != 4:
+		logging.error("usage: %s listenport numworkers workid", sys.argv[0])
+		return
 	port = int(sys.argv[1])
 	Crawler = DHTCrawler(PEERID, port)
 	Crawler.conn = psycopg2.connect(DSN)
 	Crawler.numworkers = int(sys.argv[2])
 	Crawler.workid = int(sys.argv[3])
+	if Crawler.workid < 0 or Crawler.workid >= Crawler.numworkers:
+		logging.error("workid spans from 0 to numworkers - 1")
+		return
 	try:
 		Crawler.loop()
 	except KeyboardInterrupt, SystemExit:
 		with Crawler.conn.cursor() as cur:
 			n, n6 = Crawler.get_nodes()
-			cur.executemany('SELECT insert_new_address(%s,%s)', n + n6)
+			cur.executemany('SELECT insert_new_address(%s, %s)', n + n6)
 			logging.info("SAVED: %i (%i/%i)", len(n) + len(n6), len(n), len(n6))
 		Crawler.conn.commit()
 		Crawler.conn.close()

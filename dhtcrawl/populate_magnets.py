@@ -1,6 +1,7 @@
 import sys
 import re
 import psycopg2
+import binascii
 from dbconf import DSN
 
 ASCIIHEX40_REGEX = re.compile("^[0-9a-f]{40}$")
@@ -20,7 +21,7 @@ def insert_magnets(cur, fpath):
 			linec += 1
 			l = line.strip()
 			if ASCIIHEX40_REGEX.match(l):
-				maglist.append((l,))
+				maglist.append((psycopg2.Binary(binascii.a2b_hex(l)),))
 	print len(maglist), "/", linec
 	for num, c in enumerate(chunks(maglist, CHUNKSIZE)):
 		cur.executemany('SELECT insert_new_magnet(%s)', c)
