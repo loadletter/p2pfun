@@ -7,13 +7,19 @@ from dht import DHT, DHTError
 #FETCHN=4000
 #BOOTSTRAPN=8
 #BOOTLIMIT=40
+#LOGLEVEL='INFO'
 
 try:
 	from dbconf import PEERID
 except ImportError:
 	PEERID = os.urandom(20)
 
-LOGLEVEL = logging.DEBUG
+try:
+	from dbconf import LOGLEVEL
+except ImportError:
+	LOGLEVEL = logging.DEBUG
+else:
+	LOGLEVEL = eval('logging.%s' % LOGLEVEL)
 
 class RateLimit:
 	def __init__(self, callback_func, flush_time=10):
