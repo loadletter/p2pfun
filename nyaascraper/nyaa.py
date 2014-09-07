@@ -9,7 +9,7 @@ NUM_THREADS = 10
 NUM_CHUNK = 200
 
 def i2hex(tid):
-	m = tid % 16
+	m = tid % 256
 	h = hex(m).replace('0x', '')
 	if len(h) == 1:
 		h = '0' + h
