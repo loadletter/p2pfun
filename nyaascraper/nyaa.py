@@ -5,8 +5,8 @@ from tpool import ThreadPool
 HTTP_PROXY = ""
 NYAA_URL = "http://www.nyaa.se"
 SKIP_EXISTING = True
-NUM_THREADS = 4
-NUM_CHUNK = 20
+NUM_THREADS = 10
+NUM_CHUNK = 200
 
 def i2hex(tid):
 	m = tid % 16
@@ -29,7 +29,7 @@ class TorrentStore:
 		if not os.path.isdir(path):
 			return False
 		_, _, bucketfiles = os.walk(path).next()
-		return tid in map(lambda x: int(x.split('-')[0]), bucketfiles)
+		return tid in map(lambda x: int(x.split('-', 1)[0]), bucketfiles)
 	
 	def add(self, tid, filename, data):
 		filepath = os.path.join(self.tmpdir, '%i-%s' % (tid, filename))
@@ -38,7 +38,7 @@ class TorrentStore:
 	
 	def commit(self):
 		_, _, bucketfiles = os.walk(self.tmpdir).next()
-		splitnames = map(lambda x: x.split('-'), bucketfiles)
+		splitnames = map(lambda x: x.split('-', 1), bucketfiles)
 		splitnames.sort(key=lambda x: int(x[0]))
 		for i, n in splitnames:
 			fname = '%s-%s' % (i, n)
