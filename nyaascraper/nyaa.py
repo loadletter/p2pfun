@@ -83,7 +83,11 @@ class NyaaScraper:
 			if req.status_code == 200:
 				filename = re.findall(FILENAME_REGEX, req.headers['content-disposition'])[0]
 				self.store.add(tid, filename, req.content)
-				print "found:", tid
+				if len('%i-%s' % (tid, filename)) > 250:
+					filename = filename[:250] + '.CUT'
+					print "foundcut:", tid
+				else:
+					print "found:", tid
 			elif req.status_code == 404 or req.status_code in [302, 303]:
 				print "torrent/%i:NotFound" % tid
 			else:
