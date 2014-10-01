@@ -1,9 +1,15 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-import os, SimpleHTTPServer, SocketServer, socket, cgi, urlparse, requests
+import os, SimpleHTTPServer, SocketServer, socket, cgi, urlparse, requests, urllib
 
+TRACKER = 'http://october.bakabt.me:2710/cdf9a433d3e2c0f89862f68bc8d23aaf/announce.php'
 PORT = 8025
+HTTP_UA = 'uTorrent/2210(25302)'
+PEER_ID = '-UT2210-%d6b%cb%d3R%d9%c7%e3%bcvp%86'
 HOSTNAME = socket.gethostbyaddr(socket.gethostname())[0]
+ANNOUNCE_URL = TRACKER
+BASE_URL, ANNOUNCE_KW = ANNOUNCE_URL.rsplit('/', 1)
+SCRAPE_URL = ''.join((BASE_URL, '/', 'scrape', ANNOUNCE_KW.replace('announce', '')))
 
 class webDispatcher(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
@@ -14,14 +20,31 @@ class webDispatcher(SimpleHTTPServer.SimpleHTTPRequestHandler):
 		self.wfile.write('Hello.')
 
 	def req_announce(self, **kwargs):
-		self.send_response(200)
-		self.end_headers()       
-		self.wfile.write(requests.get('''http://october.bakabt.me:2710/cdf9a433d3e2c0f89862f68bc8d23aaf/announce.php?info_hash=%13%15%86%2bd%19O%94%97%c6%922%cd%e6%19w%3d%02c%5d&peer_id=-UT2210-%d6b%cb%d3R%d9%c7%e3%bcvp%86&port=44589&uploaded=0&downloaded=0&left=1693878276&corrupt=0&key=2E0A2949&event=started&numwant=200&compact=1&no_peer_id=1&ipv6=2001%3a0%3a5ef5%3a79fd%3a386c%3a330f%3aa007%3aa26''', headers={'User-Agent' : 'uTorrent/2210(25302)'}).content)
+		keys = tuple(kwargs)
+		values = map(lambda x: kwargs[x][0], keys)
+		args = dict(zip(keys, values))
+		args['peer_id'] = PEER_ID
+		#re.sub('peer_id=[^&]+',  'asdasd', url)
+		print kwargs
+		print args
+		dest_url = ANNOUNCE_URL + '?' + urllib.urlencode(args)
+		print dest_url
+		req = requests.get(dest_url, headers={'User-Agent' : HTTP_UA})
+		print req.url
+		self.send_response(req.status_code)
+		self.end_headers()
+		self.wfile.write(req.content)
 
 	def req_scrape(self, **kwargs):
-		self.send_response(200)
-		self.end_headers()    
-		self.wfile.write(requests.get('http://october.bakabt.me:2710/cdf9a433d3e2c0f89862f68bc8d23aaf/scrape.php?info_hash=%13%15%86%2bd%19O%94%97%c6%922%cd%e6%19w%3d%02c%5d', headers={'User-Agent' : 'uTorrent/2210(25302)'}).content)
+		keys = tuple(kwargs)
+		values = map(lambda x: kwargs[x][0], keys)
+		args = dict(zip(keys, values))
+		if peer_id in args:
+			del args['peer_id']
+		req = requests.get(SCRAPE_URL + '?' + urllib.urlencode(args), headers={'User-Agent' : HTTP_UA})
+		self.send_response(req.status_code)
+		self.end_headers()
+		self.wfile.write(req.content)
 			
 	def do_GET(self):
 		params = cgi.parse_qs(urlparse.urlparse(self.path).query)
