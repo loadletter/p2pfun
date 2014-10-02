@@ -28,7 +28,7 @@ class webDispatcher(SimpleHTTPServer.SimpleHTTPRequestHandler):
 		self.wfile.write(req.content)
 
 	def req_scrape(self, qs):
-		newquery = re.sub('peer_id=[^&]+', '', qs)
+		newquery = re.sub('peer_id=[^&]+&', '', qs)
 		req = requests.get(SCRAPE_URL + '?' + newquery, headers=REQ_HEADERS)
 		self.send_response(req.status_code)
 		self.end_headers()
