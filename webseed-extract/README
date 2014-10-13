@@ -1,0 +1,11 @@
+Create a list of urls to download without a bittorrent client
+from a torrent with webseeds (currently only picks the first webseed set)
+
+$ python extract.py mydata.torrent > urllist.txt
+$ wget -x -H -c -i urllist.txt
+
+Description:
+ -x : create directory structure
+ -H : turn on timestamps
+ -c : resume interrupted downloads
+ -i : get urls from file
